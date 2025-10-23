@@ -1,4 +1,4 @@
-import { BlackGooEntity } from './game2.html'; // This is not a module, but indicates source
+// The BlackGooEntity class is defined in the main index.html script.
 
 const BiomeManager = {
     biomes: [

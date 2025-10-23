@@ -427,6 +427,8 @@
     <script src="goo-shaders.js"></script>
     <script src="nightvision.js"></script>
     <script src="example.js"></script>
+    <script src="biomes.js"></script>
+    <script src="procedural-entity-shader.js"></script>
 
     <script>
         window.onload = function() {
@@ -473,6 +475,32 @@
                 parent.add(child);
             }
 
+            class BlackGooEntity {
+                constructor() {
+                    const geometry = new THREE.IcosahedronGeometry(2.0, 5);
+                    const material = new THREE.ShaderMaterial({
+                        vertexShader: gooVertexShader,
+                        fragmentShader: gooFragmentShader,
+                        uniforms: {
+                        uTime: { value: 0 },
+                        uMouse: { value: new THREE.Vector2(0, 0) },
+                        uDisturbed: { value: 0 },
+                        uFeeding: { value: 0 },
+                        uIntensity: { value: 1.0 }
+                        },
+                        side: THREE.DoubleSide
+                    });
+                    
+                    this.mesh = new THREE.Mesh(geometry, material);
+                    this.clock = new THREE.Clock();
+                    this.mesh.userData.isGoo = true;
+                }
+
+                update() {
+                    const delta = this.clock.getDelta();
+                    this.mesh.material.uniforms.uTime.value += delta;
+                }
+            }
 
             // Game state
             let gameState = {
@@ -653,119 +681,123 @@
                 wallMaterial.userData.shader = shader;
             };
 
-            const skyMaterial = new THREE.ShaderMaterial({
-                side: THREE.BackSide,
-                depthWrite: false,
-                uniforms: {
-                    time: { value: 0 },
-                    baseTop: { value: new THREE.Color(0x0b1230) },
-                    baseBottom: { value: new THREE.Color(0x00101a) },
-                    nebulaA: { value: new THREE.Color(0xff5aa8) },
-                    nebulaB: { value: new THREE.Color(0x5b3bff) },
-                    accentA: { value: new THREE.Color(0x00ffe1) },
-                    accentB: { value: new THREE.Color(0xffcc66) },
-                    starColor: { value: new THREE.Color(0xffffff) },
-                    starDensity: { value: 1.0 },
-                    nebulaDetail: { value: 1.0 },
-                    flowStrength: { value: 1.6 },
-                    speed: { value: 0.3 },
-                    cometSeed: { value: Math.random() * 1000.0 }
-                },
-                vertexShader: `
-                    varying vec3 vPos;
-                    void main() {
-                        vPos = normalize(position);
-                        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-                    }
-                `,
-                fragmentShader: `
-                    precision highp float;
-                    varying vec3 vPos;
-                    uniform float time;
-                    uniform float speed;
-                    uniform float flowStrength;
-                    uniform float nebulaDetail;
-                    uniform float cometSeed;
-                    uniform vec3 baseTop;
-                    uniform vec3 baseBottom;
-                    uniform vec3 nebulaA;
-                    uniform vec3 nebulaB;
-                    uniform vec3 accentA;
-                    uniform vec3 accentB;
-                    uniform vec3 starColor;
-                    uniform float starDensity;
-
-                    float hash2(vec2 p) {
-                        return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
-                    }
-
-                    float fbm3(vec3 p) {
-                        float amp = 0.5;
-                        float sum = 0.0;
-                        for(int i = 0; i < 6; i++) {
-                            sum += amp * fract(sin(dot(p, vec3(127.1, 311.7, 74.7) * float(i + 1))) * 43758.5453);
-                            p *= 2.0;
-                            amp *= 0.5;
+            function createSky() {
+                const skyMaterial = new THREE.ShaderMaterial({
+                    side: THREE.BackSide,
+                    depthWrite: false,
+                    uniforms: {
+                        time: { value: 0 },
+                        baseTop: { value: new THREE.Color(0x0b1230) },
+                        baseBottom: { value: new THREE.Color(0x00101a) },
+                        nebulaA: { value: new THREE.Color(0xff5aa8) },
+                        nebulaB: { value: new THREE.Color(0x5b3bff) },
+                        accentA: { value: new THREE.Color(0x00ffe1) },
+                        accentB: { value: new THREE.Color(0xffcc66) },
+                        starColor: { value: new THREE.Color(0xffffff) },
+                        starDensity: { value: 1.0 },
+                        nebulaDetail: { value: 1.0 },
+                        flowStrength: { value: 1.6 },
+                        speed: { value: 0.3 },
+                        cometSeed: { value: Math.random() * 1000.0 }
+                    },
+                    vertexShader: `
+                        varying vec3 vPos;
+                        void main() {
+                            vPos = normalize(position);
+                            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
                         }
-                        return sum;
-                    }
+                    `,
+                    fragmentShader: `
+                        precision highp float;
+                        varying vec3 vPos;
+                        uniform float time;
+                        uniform float speed;
+                        uniform float flowStrength;
+                        uniform float nebulaDetail;
+                        uniform float cometSeed;
+                        uniform vec3 baseTop;
+                        uniform vec3 baseBottom;
+                        uniform vec3 nebulaA;
+                        uniform vec3 nebulaB;
+                        uniform vec3 accentA;
+                        uniform vec3 accentB;
+                        uniform vec3 starColor;
+                        uniform float starDensity;
 
-                    vec3 curl(vec3 p) {
-                        float e = 0.01;
-                        float a = fbm3(p);
-                        float bx = fbm3(p + vec3(e, 0.0, 0.0));
-                        float by = fbm3(p + vec3(0.0, e, 0.0));
-                        float bz = fbm3(p + vec3(0.0, 0.0, e));
-                        return normalize(vec3(by - bz, bz - bx, bx - by));
-                    }
-
-                    vec3 nebulaPalette(float t) {
-                        return mix(nebulaA, nebulaB, smoothstep(0.0, 1.0, t));
-                    }
-
-                    float comet(vec2 uv, vec2 center, vec2 dir, float length, float thickness) {
-                        vec2 rel = uv - center;
-                        float proj = dot(rel, dir);
-                        float side = dot(rel, vec2(-dir.y, dir.x));
-                        float t = smoothstep(0.0, 1.0, proj / length);
-                        float line = exp(-pow(side / (thickness * (1.0 - t * 0.8) + 0.0001), 2.0) * 4.0);
-                        line *= (1.0 - smoothstep(0.0, 1.0, proj / length));
-                        return line * (0.6 + 0.4 * (1.0 - t));
-                    }
-
-                    void main() {
-                        vec3 dir = normalize(vPos);
-                        float up = smoothstep(-0.3, 1.0, dir.y);
-                        vec3 base = mix(baseBottom, baseTop, up);
-                        vec2 sph = vec2(atan(dir.z, dir.x), asin(dir.y));
-                        vec3 p = vec3(dir * 2.0);
-                        vec3 flow = curl(p * 0.7 + time * 0.12) * flowStrength;
-                        float density = 0.0;
-                        float scl = 1.0;
-                        for(int i = 0; i < 5; i++) {
-                            float v = fbm3((p + flow * float(i) * 0.18 + vec3(time * 0.06 * float(i))) * scl);
-                            v = smoothstep(0.18, 0.75, v);
-                            density += v * (0.55 / float(i + 1));
-                            scl *= 1.9;
+                        float hash2(vec2 p) {
+                            return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
                         }
-                        density = clamp(density * nebulaDetail, 0.0, 1.0);
-                        vec3 neb = nebulaPalette(density) * density * 1.6;
-                        vec3 accents = mix(accentA, accentB, fract(density * 3.0 + time * 0.2));
-                        neb += accents * pow(density, 3.0) * 0.8;
-                        float stars = hash2(sph * 1000.0) * step(0.998, hash2(sph * 200.0 + 10.0)) * starDensity;
-                        stars += hash2(sph * 2000.0) * step(0.999, hash2(sph * 400.0 + 20.0)) * starDensity * 0.6;
-                        stars = pow(stars, 2.0);
-                        float cometTime = fract(time * 0.05 + cometSeed);
-                        vec2 cometDir = vec2(sin(cometSeed), cos(cometSeed));
-                        vec2 cometCenter = vec2(cometTime * 2.0 - 1.0, sin(cometSeed * 2.0) * 0.5);
-                        float c = comet(sph, cometCenter, cometDir, 0.3, 0.005);
-                        vec3 finalColor = base + neb + stars * starColor + c * accentA * 2.0;
-                        gl_FragColor = vec4(finalColor, 1.0);
-                    }
-                `
-            });
-            const skyGeo = new THREE.SphereGeometry(300, 56, 56);
-            const sky = new THREE.Mesh(skyGeo, skyMaterial);
+
+                        float fbm3(vec3 p) {
+                            float amp = 0.5;
+                            float sum = 0.0;
+                            for(int i = 0; i < 6; i++) {
+                                sum += amp * fract(sin(dot(p, vec3(127.1, 311.7, 74.7) * float(i + 1))) * 43758.5453);
+                                p *= 2.0;
+                                amp *= 0.5;
+                            }
+                            return sum;
+                        }
+
+                        vec3 curl(vec3 p) {
+                            float e = 0.01;
+                            float a = fbm3(p);
+                            float bx = fbm3(p + vec3(e, 0.0, 0.0));
+                            float by = fbm3(p + vec3(0.0, e, 0.0));
+                            float bz = fbm3(p + vec3(0.0, 0.0, e));
+                            return normalize(vec3(by - bz, bz - bx, bx - by));
+                        }
+
+                        vec3 nebulaPalette(float t) {
+                            return mix(nebulaA, nebulaB, smoothstep(0.0, 1.0, t));
+                        }
+
+                        float comet(vec2 uv, vec2 center, vec2 dir, float length, float thickness) {
+                            vec2 rel = uv - center;
+                            float proj = dot(rel, dir);
+                            float side = dot(rel, vec2(-dir.y, dir.x));
+                            float t = smoothstep(0.0, 1.0, proj / length);
+                            float line = exp(-pow(side / (thickness * (1.0 - t * 0.8) + 0.0001), 2.0) * 4.0);
+                            line *= (1.0 - smoothstep(0.0, 1.0, proj / length));
+                            return line * (0.6 + 0.4 * (1.0 - t));
+                        }
+
+                        void main() {
+                            vec3 dir = normalize(vPos);
+                            float up = smoothstep(-0.3, 1.0, dir.y);
+                            vec3 base = mix(baseBottom, baseTop, up);
+                            vec2 sph = vec2(atan(dir.z, dir.x), asin(dir.y));
+                            vec3 p = vec3(dir * 2.0);
+                            vec3 flow = curl(p * 0.7 + time * 0.12) * flowStrength;
+                            float density = 0.0;
+                            float scl = 1.0;
+                            for(int i = 0; i < 5; i++) {
+                                float v = fbm3((p + flow * float(i) * 0.18 + vec3(time * 0.06 * float(i))) * scl);
+                                v = smoothstep(0.18, 0.75, v);
+                                density += v * (0.55 / float(i + 1));
+                                scl *= 1.9;
+                            }
+                            density = clamp(density * nebulaDetail, 0.0, 1.0);
+                            vec3 neb = nebulaPalette(density) * density * 1.6;
+                            vec3 accents = mix(accentA, accentB, fract(density * 3.0 + time * 0.2));
+                            neb += accents * pow(density, 3.0) * 0.8;
+                            float stars = hash2(sph * 1000.0) * step(0.998, hash2(sph * 200.0 + 10.0)) * starDensity;
+                            stars += hash2(sph * 2000.0) * step(0.999, hash2(sph * 400.0 + 20.0)) * starDensity * 0.6;
+                            stars = pow(stars, 2.0);
+                            float cometTime = fract(time * 0.05 + cometSeed);
+                            vec2 cometDir = vec2(sin(cometSeed), cos(cometSeed));
+                            vec2 cometCenter = vec2(cometTime * 2.0 - 1.0, sin(cometSeed * 2.0) * 0.5);
+                            float c = comet(sph, cometCenter, cometDir, 0.3, 0.005);
+                            vec3 finalColor = base + neb + stars * starColor + c * accentA * 2.0;
+                            gl_FragColor = vec4(finalColor, 1.0);
+                        }
+                    `
+                });
+                const skyGeo = new THREE.SphereGeometry(300, 56, 56);
+                const sky = new THREE.Mesh(skyGeo, skyMaterial);
+                return sky;
+            }
+            const sky = createSky();
             safeAdd(scene, sky, 'Sky Sphere');
             
             function createFloorMaterial(texture) {
@@ -783,7 +815,8 @@
                         uniform vec3 zombiePositions[10];
                         uniform int zombieCount;
                         varying vec3 vWorldPosition;
-                    \n` + shader.vertexShader;
+                    
+` + shader.vertexShader;
 
                     shader.vertexShader = shader.vertexShader.replace(
                         '#include <worldpos_vertex>',
@@ -829,7 +862,7 @@
                 floor.position.y = 0; 
                 safeAdd(group, floor, 'Chunk Floor');
 
-                const ceilingMaterial = new THREE.MeshStandardMaterial({ color: 0x202020, roughness: 0.95 });
+                const ceilingMaterial = new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 0.95 });
                 const ceiling = new THREE.Mesh(floorGeo, ceilingMaterial);
                 ceiling.rotation.x = Math.PI / 2; 
                 ceiling.position.y = 4;
@@ -1188,7 +1221,8 @@
                             vec4 grad = vec4(x0.x,x1.x,x2.x,x3.x)*gx.x + vec4(x0.y,x1.y,x2.y,x3.y)*gx.y + vec4(x0.z,x1.z,x2.z,x3.z)*gx.z + vec4(x0.w,x1.w,x2.w,x3.w)*gx.w;
                             return 130.0 * dot(m, grad);
                         }
-                    \n` + shader.fragmentShader;
+                    
+` + shader.fragmentShader;
 
                     shader.fragmentShader = shader.fragmentShader.replace(
                         '#include <dithering_fragment>',
@@ -1227,33 +1261,6 @@
                 return cloakingMaterial;
             }
 
-            class BlackGooEntity {
-                constructor() {
-                    const geometry = new THREE.IcosahedronGeometry(2.0, 5);
-                    const material = new THREE.ShaderMaterial({
-                        vertexShader: gooVertexShader,
-                        fragmentShader: gooFragmentShader,
-                        uniforms: {
-                        uTime: { value: 0 },
-                        uMouse: { value: new THREE.Vector2(0, 0) },
-                        uDisturbed: { value: 0 },
-                        uFeeding: { value: 0 },
-                        uIntensity: { value: 1.0 }
-                        },
-                        side: THREE.DoubleSide
-                    });
-                    
-                    this.mesh = new THREE.Mesh(geometry, material);
-                    this.clock = new THREE.Clock();
-                    this.mesh.userData.isGoo = true;
-                }
-
-                update() {
-                    const delta = this.clock.getDelta();
-                    this.mesh.material.uniforms.uTime.value += delta;
-                }
-            }
-
             function createEntity(x, z, type = 0) {
                 const types = [
                     { color: 0x330000, emissive: 0xff0000, speed: 0.01, health: 3, size: 0.8, isFriendly: false, damage: 0.1, dialogue: {normal: ["We are one.", "You cannot comprehend.", "The pattern must be completed.", "Your presence is a flaw.", "Your light will be extinguished.", "The Architect sees all.", "You are a glitch in the system.", "We are the antibodies of this reality.", "Your reality is a cage.", "The master is coming.", "You are just a vessel.", "Your thoughts are not your own."]} },
@@ -1275,12 +1282,26 @@
                             "We see your fear.": "And I see your weakness."
                         } 
                     } },
-                    { color: 0x000000, emissive: 0x000000, speed: 0, health: 1000, size: 2, isFriendly: false, damage: 0.2, dialogue: {normal: ["..."], lowSanity: ["..."], highSanity: ["..."] } }
+                    { color: 0x000000, emissive: 0x000000, speed: 0, health: 1000, size: 2, isFriendly: false, damage: 0.2, dialogue: {normal: ["..."], lowSanity: ["..."], highSanity: ["..."]} },
+                    { isProcedural: true, health: 100, size: 1, isFriendly: false, damage: 0.1, dialogue: {normal: ["...static..."]} }
                 ];
                 const entityType = types[type];
 
                 let entity;
-                if (type === 2) {
+                if (entityType.isProcedural) {
+                    const geometry = new THREE.IcosahedronGeometry(entityType.size, 64);
+                    const material = new THREE.ShaderMaterial({
+                        uniforms: {
+                            u_time: { value: 0.0 },
+                            cameraPosition: { value: camera.position }
+                        },
+                        vertexShader: proceduralEntityVertexShader,
+                        fragmentShader: proceduralEntityFragmentShader
+                    });
+                    entity = new THREE.Mesh(geometry, material);
+                    entity.position.set(x, entityType.size, z);
+                    entity.userData.isProceduralEntity = true;
+                } else if (type === 2) {
                     entity = createAlienEntity(x, z, entityType);
                 } else if (type === 4) {
                     entity = new BlackGooEntity();
@@ -1431,7 +1452,7 @@
                 if (gameState.morphoser) scene.remove(gameState.morphoser);
                 const hostileCount = 5 + gameState.level;
                 for(let i = 0; i < hostileCount; i++) {
-                    const type = Math.floor(Math.random() * 3);
+                    const type = i === 0 ? 5 : Math.floor(Math.random() * 3);
                     const angle = (i / hostileCount) * Math.PI * 2;
                     const radius = 20 + Math.random() * 20;
                     const ent = createEntity(Math.sin(angle) * radius, Math.cos(angle) * radius, type)
@@ -1614,7 +1635,7 @@
                     pauseMenu.style.display = 'flex';
                     drawMinimap();
                     gameState.isLocked = false;
-                } else {
+                } else { 
                     pauseMenu.style.display = 'none';
                     canvas.requestPointerLock();
                     animate();
@@ -1750,7 +1771,7 @@
             canvas.addEventListener('click', () => { if (!AudioEngine.isInitialized) AudioEngine.init(); if(gameState.isPaused) return; if(!gameState.isLocked) { canvas.requestPointerLock(); const musicPlayer = document.getElementById('bgMusicPlayer'); if (musicPlayer.paused && gameState.musicState.track !== 'off') musicPlayer.play().catch(e => {}); } else if (gameState.activeWeapon !== 'rifle') attack(); });
             document.addEventListener('pointerlockchange', () => { 
                 gameState.isLocked = document.pointerLockElement === canvas; 
-                if (!gameState.isLocked && !gameState.isPaused) { if (gameState.pauseView !== 'datalog') { togglePause(); } } // Pause if we lose lock (e.g. alt-tab)
+                if (!gameState.isLocked && !gameState.isPaused) { if (gameState.pauseView !== 'datalog') { togglePause(); } } // Pause if we lose lock (e.g. alt-tab) 
             });
             canvas.addEventListener('mousemove', (e) => { if(gameState.isLocked) { gameState.rotation.y -= e.movementX * 0.002; gameState.rotation.x -= e.movementY * 0.002; gameState.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, gameState.rotation.x)); } });
 
@@ -2121,6 +2142,11 @@
                 gameState.entities.forEach(entity => {
                     let entityObject = entity.mesh ? entity.mesh : entity; 
 
+                    if (entityObject.userData.isProceduralEntity) {
+                        entityObject.material.uniforms.u_time.value = time;
+                        entityObject.material.uniforms.cameraPosition.value.copy(camera.position);
+                    }
+
                     if (entity.update) { // specifically for BlackGooEntity class
                         entity.update();
                     }
@@ -2224,7 +2250,7 @@
                     } 
                     if (proj.userData.gravity) continue; // Blood particles don't do damage
                     for(let j = gameState.entities.length - 1; j >= 0; j--) { const entity = gameState.entities[j]; const entityObject = entity.mesh ? entity.mesh : entity; if (!entityObject.userData.isFriendly && proj.position.distanceTo(entityObject.position) < 1.5) { entityObject.userData.health--; AudioEngine.play('entityHit'); createBloodSplatter(proj.position, scene, gameState, safeAdd); scene.remove(proj); gameState.projectiles.splice(i, 1); if(entityObject.userData.health <= 0) { handleZombieDeath(entityObject); } break; } } 
-                }
+                } 
                 
                 handleConversations();
 
@@ -2248,7 +2274,7 @@
                         if (gameState.activeEvent && gameState.activeEvent.onEnd) gameState.activeEvent.onEnd();
                         gameState.activeEvent = null; scene.fog.color.setHex(0x0a0a0a); mainLight.intensity = 0.8; document.getElementById('eventText').style.opacity = 0;
                     }
-                } else if (Math.random() < 0.001) { triggerEvent(); }
+                } else if (Math.random() < 0.001) { triggerEvent(); } 
                 
                 if(gameState.exitPortal && camera.position.distanceTo(gameState.exitPortal.position) < 5) { AudioEngine.play('nextLevel'); gameState.level++; camera.position.set(0, 1.6, 0); scene.remove(gameState.exitPortal); gameState.exitPortal = createExitPortal(gameState.level); scene.add(gameState.exitPortal); setupLevel(); }
 
