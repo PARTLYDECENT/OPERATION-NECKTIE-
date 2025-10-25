@@ -55,7 +55,12 @@ const AudioEngine = {
             
             // Load initial sounds (retains original behavior)
             // this.loadAmbientSound('../assets/sounds/ambient.wav'); // Original commented out
-            this.loadHorrorSound('../assets/sounds/horror_ambient.wav');
+            this.loadHorrorSound('assets/sounds/horror_ambient.wav');
+            this.loadSound('ugvShot', 'assets/sounds/ugvshot.mp3');
+            this.loadSound('ugvHit1', 'assets/sounds/ugvhit1.mp3');
+            this.loadSound('ugvHit2', 'assets/sounds/ugvhit2.mp3');
+            this.loadSound('ugvHit3', 'assets/sounds/ugvhit3.mp3');
+            this.loadSound('ugvHit4', 'assets/sounds/ugvhit4.mp3');
 
         } catch (e) { 
             console.error("Web Audio API is not supported in this browser", e); 
@@ -295,6 +300,32 @@ const AudioEngine = {
         this._play(this.sounds[soundName]);
     },
 
+    /**
+     * [NEW] Plays a one-shot sound from the buffer.
+     * @param {string} name - The key of the sound in the buffer Map.
+     * @param {number} [volume=1.0] - The volume to play the sound at.
+     */
+    playBufferedSound(name, volume = 1.0) {
+        if (!this.isInitialized) {
+            console.warn("Audio Engine not initialized.");
+            return;
+        }
+        const buffer = this.buffers.get(name);
+        if (!buffer) {
+            console.warn(`Buffered sound "${name}" not found. Was it loaded?`);
+            return;
+        }
+
+        const source = this.ctx.createBufferSource();
+        const gain = this.ctx.createGain();
+
+        source.buffer = buffer;
+        gain.gain.setValueAtTime(volume, this.ctx.currentTime);
+
+        source.connect(gain).connect(this.masterGain);
+        source.start(0);
+    },
+
     updateHealthEffect(health) {
         if (!this.isInitialized || !this.ctx) return;
         
@@ -389,6 +420,33 @@ const AudioEngine = {
         nextLevel: (ctx, dest) => { [261.63, 329.63, 392.00, 523.25].forEach((f, i) => { const o = ctx.createOscillator(), g = ctx.createGain(); o.connect(g); g.connect(dest); o.type = 'sine'; o.frequency.setValueAtTime(f, ctx.currentTime + i * 0.1); g.gain.setValueAtTime(0.3, ctx.currentTime + i * 0.1); g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.1 + 0.1); o.start(ctx.currentTime + i * 0.1); o.stop(ctx.currentTime + i * 0.1 + 0.15); }); },
         pickup: (ctx, dest) => { const o = ctx.createOscillator(), g = ctx.createGain(); o.connect(g); g.connect(dest); o.type = 'sine'; o.frequency.setValueAtTime(880, ctx.currentTime); o.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.15); g.gain.setValueAtTime(0.15, ctx.currentTime); g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2); o.start(ctx.currentTime); o.stop(ctx.currentTime + 0.2); },
         enemyGrowl: (ctx, dest) => { const o = ctx.createOscillator(), g = ctx.createGain(), lf = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(60, ctx.currentTime); lf.type = 'sine'; lf.frequency.setValueAtTime(0.8, ctx.currentTime); const shaper = ctx.createWaveShaper(), curve = new Float32Array(256); for (let i = 0; i < 256; i++) { const x = i * 2 / 256 - 1; curve[i] = Math.tanh(x * 2); } shaper.curve = curve; shaper.oversample = '2x'; lf.connect(g.gain); o.connect(shaper); shaper.connect(g); g.connect(dest); g.gain.setValueAtTime(0.001, ctx.currentTime); g.gain.linearRampToValueAtTime(0.35, ctx.currentTime + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 1.0); o.start(ctx.currentTime); lf.start(ctx.currentTime); o.stop(ctx.currentTime + 1.0); lf.stop(ctx.currentTime + 1.0); },
+    },
+    ugvShot: (ctx, dest) => {
+        // Layer 1: The electronic "zap"
+        const zapOsc = ctx.createOscillator();
+        const zapGain = ctx.createGain();
+        zapOsc.connect(zapGain);
+        zapGain.connect(dest);
+        zapOsc.type = 'square';
+        zapOsc.frequency.setValueAtTime(1200, ctx.currentTime);
+        zapOsc.frequency.exponentialRampToValueAtTime(400, ctx.currentTime + 0.1);
+        zapGain.gain.setValueAtTime(0.2, ctx.currentTime);
+        zapGain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
+        zapOsc.start(ctx.currentTime);
+        zapOsc.stop(ctx.currentTime + 0.1);
+
+        // Layer 2: The mechanical "thump"
+        const thumpOsc = ctx.createOscillator();
+        const thumpGain = ctx.createGain();
+        thumpOsc.connect(thumpGain);
+        thumpGain.connect(dest);
+        thumpOsc.type = 'sine';
+        thumpOsc.frequency.setValueAtTime(120, ctx.currentTime);
+        thumpOsc.frequency.exponentialRampToValueAtTime(60, ctx.currentTime + 0.15);
+        thumpGain.gain.setValueAtTime(0.4, ctx.currentTime);
+        thumpGain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+        thumpOsc.start(ctx.currentTime);
+        thumpOsc.stop(ctx.currentTime + 0.15);
     },
 };
 
@@ -499,7 +557,8 @@ function createBloodSplatter(pos, scene, gameState, safeAdd) {
         particle.userData = {
             velocity: new THREE.Vector3( (Math.random() - 0.5) * 0.3, Math.random() * 0.3, (Math.random() - 0.5) * 0.3 ),
             life: 60, // Frames
-            gravity: true
+            gravity: true,
+            isParticle: true // [FIX] Flag to prevent self-collision checks
         };
         safeAdd(scene, particle, 'Blood Particle');
         gameState.projectiles.push(particle);
